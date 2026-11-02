@@ -1,0 +1,81 @@
+{
+  "status": "preparation_only",
+  "updated_on": "2026-10-05",
+  "user_scope": {
+    "simulation_first": true,
+    "real_robot": null,
+    "primary_models": ["original_openvla", "pi05"],
+    "rl_preference": "Use SmoothRL only if official implementation is open and applicable evidence supports superiority over piRL."
+  },
+  "baseline": {
+    "benchmark": "LIBERO",
+    "robot": "Franka/Panda",
+    "suites": ["libero_spatial", "libero_object", "libero_goal", "libero_10"],
+    "development_seed": 7,
+    "development_trials_per_task": 1,
+    "development_episodes_per_suite": 10,
+    "formal_trials_per_task": 50,
+    "formal_seeds": null,
+    "formal_seed_status": "Freeze paired held-out seeds after debugging; do not infer paper reproduction from the development seed.",
+    "openvla_checkpoints": {
+      "libero_spatial": "openvla/openvla-7b-finetuned-libero-spatial",
+      "libero_object": "openvla/openvla-7b-finetuned-libero-object",
+      "libero_goal": "openvla/openvla-7b-finetuned-libero-goal",
+      "libero_10": "openvla/openvla-7b-finetuned-libero-10"
+    },
+    "openvla_center_crop": true,
+    "openvla_local_precision_candidate": "4bit; report as adapted local baseline, not paper bf16 result",
+    "openvla_weight_revisions": null,
+    "pi05_config": "pi05_libero",
+    "pi05_checkpoint": "gs://openpi-assets/checkpoints/pi05_libero",
+    "pi05_weight_sha256_manifest": null,
+    "pi05_prediction_horizon": 10,
+    "pi05_execution_replan_steps": 5,
+    "weights_status": "Not downloaded; lock immutable HF revisions / per-file checksums before formal evaluation."
+  },
+  "reinforcement_learning": {
+    "selected_candidate": "piRL / RLinf",
+    "piRL_paper": "https://arxiv.org/abs/2510.25889",
+    "piRL_reference_config": "https://github.com/RLinf/RLinf/blob/c70606f08cdca259b8dec03d4430926b5b8fac9d/examples/embodiment/config/libero_spatial_ppo_openpi_pi05.yaml",
+    "reference_status": "Upstream multi-GPU recipe; not a standalone local training configuration",
+    "smoothrl_paper": "https://arxiv.org/abs/2608.29768",
+    "smoothrl_project": "https://www.astribot.com/en/AI/SmoothRL/",
+    "smoothrl_status": "Official public implementation not located as of 2026-10-05; no direct piRL comparison or LIBERO result established.",
+    "local_training_accepted": false,
+    "smoothness_evaluation_proposal": ["joint velocity", "joint acceleration", "joint jerk", "chunk boundary discontinuity", "success rate", "latency", "training GPU hours"]
+  },
+  "harness": {
+    "implementation": "RPent",
+    "paper": "https://arxiv.org/abs/2607.08448",
+    "stage": "Single-task LIBERO-Pro protocol reproduction before full benchmark",
+    "preferred_start": {"task_suite": "libero_object_swap", "task_id": 2, "seed": 0},
+    "stack": ["pi05 service", "SAM3 service", "MuJoCo/EGL simulator", "planner", "frozen memory"],
+    "rpent_compatible_dependencies": {
+      "rlinf_release_v0_4_commit": "88f9867ff5b3004b482d6788a871081a43098620",
+      "rlinf_openpi_rpent_commit": "a560f4dd8205b8423ecd4c8a0fabb5f54140b8a0"
+    },
+    "checkpoint": {
+      "repository": "RLinf/RLinf-Pi05-LIBERO-130-fullshot-SFT",
+      "revision": "6222623f635769bfc73c9472e29fab9b7fd8e027"
+    },
+    "memory": {
+      "repository": "RLinf/RPent-memory",
+      "revision": "7db66088d06d04ae097682332a09704f13e6fc0c",
+      "status": "Current layout; not the historical split snapshots behind the 741/800 result"
+    },
+    "success_signal": "Final environment state top-level terminated, not planner finish or pi0_pick heuristic",
+    "planner_credentials_status": "Not inspected or configured",
+    "full_stack_16gb_accepted": false
+  },
+  "robotics_extensions": {
+    "baseline_execution": "Preserve original LIBERO OSC_POSE and native MuJoCo FK",
+    "portable_fk": "Pinocchio, separate worker with model/frame parity validation",
+    "portable_differential_ik": "Pink",
+    "mujoco_ik_candidate": "Mink, separate modern-MuJoCo environment; current package must not be mixed into legacy LIBERO blindly",
+    "gpu_motion_candidate": "cuRobo, optional collision planning stage; pin v1/v2 API and validate Blackwell build",
+    "retargeting_candidate": "PyRoki, optional for dual-arm or humanoid extensions",
+    "trajectory_timing_candidate": "Ruckig for analytic move_to paths; do not filter the VLA baseline without an ablation",
+    "visualization": ["Rerun temporal RGB/depth/pointcloud/trajectory logging", "MeshCat robot/IK view", "RViz2 if a ROS2 backend is later added"],
+    "pointcloud": "Open3D RGB-D backprojection, voxel/outlier filtering, target geometry, collision and verifier evidence; no direct raw cloud injection into frozen VLA"
+  }
+}

@@ -1,0 +1,123 @@
+{
+  "started_at_utc": "2026-11-01T18:31:34.673398+00:00",
+  "status": "task_unsuccessful",
+  "stage": "online_task_complete",
+  "task": {
+    "libero_type": "standard",
+    "suite": "libero_10",
+    "task": 5,
+    "seed": 0,
+    "max_episode_steps": 10000
+  },
+  "endpoints": {
+    "env": "http://127.0.0.1:46783",
+    "vla": "http://127.0.0.1:38337",
+    "sam3": "http://127.0.0.1:34895"
+  },
+  "torch_compile": true,
+  "reasoning_effort": "high",
+  "planner": "api",
+  "model": "deepseek:deepseek-flash",
+  "base_url": "https://api.deepseek.com",
+  "api_cost_limit_usd": 40.0,
+  "max_tokens": 32000,
+  "configuration_version": "v3-output-32000",
+  "commands": {
+    "env": [
+      "workspace/vla_baselines/.venvs/harness-rpent/bin/python",
+      "-m",
+      "robots.libero.env_server",
+      "--suite",
+      "libero_10",
+      "--task",
+      "5",
+      "--seed",
+      "0",
+      "--max-episode-steps",
+      "10000",
+      "--transport",
+      "http",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "46783",
+      "--parent-watch"
+    ],
+    "online_planner": [
+      "workspace/vla_baselines/.venvs/harness-rpent/bin/python",
+      "scripts/harness/deepseek_api.py",
+      "--robot",
+      "libero",
+      "--libero-type",
+      "standard",
+      "--suite",
+      "libero_10",
+      "--task",
+      "5",
+      "--seed",
+      "0",
+      "--max-episode-steps",
+      "10000",
+      "--cuda-device",
+      "0",
+      "--planner",
+      "api",
+      "--reasoning-effort",
+      "high",
+      "--max-turns",
+      "100",
+      "--max-tokens",
+      "32000",
+      "--planner-timeout-s",
+      "1200",
+      "--memory-profile",
+      "local",
+      "--memory-dir",
+      "workspace/vla_baselines/cache/harness-assets-download/memory/7db66088d06d04ae097682332a09704f13e6fc0c/GPT_5.5_xhigh",
+      "--output-dir",
+      "workspace/vla_baselines/artifacts/deepseek-batch-40usd-2026-11-01/episodes/libero_10_t5_s0/online-task",
+      "--model",
+      "deepseek:deepseek-flash",
+      "--base-url",
+      "https://api.deepseek.com",
+      "--env-endpoint",
+      "http://127.0.0.1:46783",
+      "--vla-endpoint",
+      "http://127.0.0.1:38337",
+      "--sam3-endpoint",
+      "http://127.0.0.1:34895"
+    ]
+  },
+  "component_checks": {
+    "status": "previous_validation_reused"
+  },
+  "planner_exit_code": 0,
+  "transcript": "workspace/vla_baselines/artifacts/deepseek-batch-40usd-2026-11-01/episodes/libero_10_t5_s0/online-task/transcript_10_t5_s0.json",
+  "upstream_environment_success": null,
+  "environment_success": false,
+  "native_success_evidence": {
+    "path": "workspace/vla_baselines/artifacts/deepseek-batch-40usd-2026-11-01/episodes/libero_10_t5_s0/online-task/states.json",
+    "terminated_step_indices": [],
+    "state_record_count": 40
+  },
+  "planner_finish": {
+    "_finish": true,
+    "status": "failure",
+    "summary": "Single attempt, no reset. Task: \"pick up the book and place it in the back compartment of the caddy\". Localized everything with agentview_high + back_project (caddy rim z~1.06, table 0.90; book at (-0.36,-0.06); target pocket ~(-0.39,-0.14) per the s0/t5-family memory = the caddy's shallow CENTER-FRONT near pocket). The first pi0_pick of the black book succeeded and the scripted carry reached the pocket, but I RELEASED at eef z=1.084 with the book center at (-0.355,-0.115,1.03) \u2014 ~3.5 cm too shallow in x and 2.5 cm short in y, so the In predicate did not fire; the book flopped out and ended standing on edge against the caddy's front wall.\n\nThat pose proved unrecoverable within this one episode: the book is ~8 x 9 x 3 cm, so its width equals the 8 cm jaw maximum and it can only be gripped across its 3 cm thickness. Every subsequent top-down pinch closed on air, four pi0_pick attempts and a 30-chunk pi0_doubled closed on air, and scripted reaches jammed (final_dist 0.14). Root cause of the jams: Pi0's failed re-pick left the wrist rolled ~108-148 deg about -x, and the runtime's pitch tool is roll-agnostic \u2014 rotate_pitch(target=0) is a no-op, delta_pitch rotates about a tool-local axis (108->146->205->301 deg), rotate_wrist/ move_pose made it worse (eef diverged to x=-0.60), so the vertical grasp pose could never be restored.\n\nMax progress: eef (-0.4526,-0.0993,1.207); book never seated in the pocket. terminated:false; audit + recipe written."
+  },
+  "planner_error": null,
+  "planner_stats": {
+    "total_input_tokens": 5265345,
+    "total_output_tokens": 134630,
+    "total_cached_input_tokens": 2791936,
+    "turns_used": 67,
+    "tool_calls": 145
+  },
+  "elapsed_s": 976.5,
+  "cleanup_exit_codes": {
+    "planner": 0,
+    "env": 0
+  },
+  "cleanup_errors": [],
+  "finished_at_utc": "2026-11-01T18:48:05.169036+00:00"
+}

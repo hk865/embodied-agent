@@ -1,0 +1,520 @@
+I [agent] physical agent cmd: workspace/vla_baselines/.venvs/harness-rpent/bin/python scripts/harness/deepseek_api.py --robot libero --libero-type standard --suite libero_goal --task 0 --seed 0 --max-episode-steps 10000 --cuda-device 0 --planner api --reasoning-effort high --max-turns 100 --max-tokens 10000 --planner-timeout-s 1200 --memory-profile local --memory-dir workspace/vla_baselines/cache/harness-assets-download/memory/7db66088d06d04ae097682332a09704f13e6fc0c/GPT_5.5_xhigh --output-dir workspace/vla_baselines/artifacts/deepseek-batch-40usd-2026-11-01/episodes/libero_goal_t0_s0/online-task --model deepseek:deepseek-flash --base-url https://api.deepseek.com --env-endpoint http://127.0.0.1:54475 --vla-endpoint http://127.0.0.1:35375 --sam3-endpoint http://127.0.0.1:37045
+scripts/harness/deepseek_api.py:254: PydanticAIDeprecationWarning: `httpx.AsyncClient` support for OpenAI-compatible providers is deprecated and will be removed in v3; use `httpx2.AsyncClient` instead.
+  provider = DeepSeekProvider(api_key=api_key, http_client=http_client)
+                 pydantic-ai v2.53.0 • pydantic-ai-harness v0.53.0 • Python 3.11.17
+
+      / \        agent: rpent_api • model: deepseek:deepseek-flash
+     /   \         output: str | ToolOutput(output=<function _Harn… • tools: 16 • capabilities: 3
+   /___.___\
+  /    |    \    observability: off — see every model and tool call live, with cost
+/      |      \    set it up free with Logfire and a GitHub login: https://pydantic.dev/ai-setup.md
+`---.._|_..---'    or use any OpenTelemetry backend: https://pydantic.dev/docs/ai/logfire/#otel
+
+                 goes away once observability is on — or PYDANTIC_AI_NO_BANNER=1
+I [api] [text] I'll start by inspecting the initial state and reading the guides.
+I [api] [thinking] Task: "open the middle drawer of the cabinet". Cabinet is on the left side of the image (dark brown cabinet with 3 drawers visible, handles pointing right/image-right, i.e. toward robot -x?). Let me check the memory files. The task-specific goal_t0_s0.json wasn't found there. Let me list the directories.
+
+Cabinet: dark brown, located on left of image in agentview_high. The handles protrude toward... In agentview, handles are on the right face of the cabinet, at around x pixel 270-320, rows 480-720. The drawer fronts face image-right = toward the robot? Actually the robot base is behind (top of image). Hmm, the camera looks from the robot's front toward... let me think about the frame.
+
+Typical LIBERO: agentview camera is behind/above robot looking forward. Table extends away from robot. But here the robot arm is at top of image, and the table is below. Actually in this agentview image the robot arm is at top, the table scene occupies the lower part. So image +y (down) is toward the robot, image up (away) is far away? Hmm, in LIBERO agentview camera is typically positioned in front of robot looking back at the robot and table. So the bottom of the image is closer to camera (which is in front of robot), and the robot is at the top.
+
+The cabinet at the left of the image with drawer handles facing right: the handles face toward... Let me use back_project to compute coordinates.
+
+Task requires opening the MIDDLE drawer. Use pi0_doubled with prompt "open the middle drawer of the cabinet".
+
+Let me read guides and memory. First list dirs.
+I [api] [thinking] Task family: libero_goal_task_t0.md. Also list task-specific dir.
+I [api] [thinking] Read goal_task_t0_s0.json and its recipe. Note in this memory the task-family says t0 = "open the bottom drawer of the cabinet". Our task_language says "open the middle drawer of the cabinet". Hmm. The task-family file for libero_goal_task_t0 says bottom drawer. But maybe the goal t0 naming differs. Anyway, our authoritative instruction is "open the middle drawer of the cabinet". So we need the MIDDLE drawer, which is the middle of three handles.
+
+Let's read the audit + recipe.
+I [api] [thinking] The seed-0 reference for goal t0 solved "open the bottom drawer" with eef at [0.0064,-0.1300,1.0246] reaching the cabinet face. Now our instruction is "open the middle drawer of the cabinet". So we need the middle handle instead of the lowest. We should use a similar pose but at middle drawer height, prompt "pull the middle gray drawer handle outward".
+
+First I need to locate the cabinet handles in the current scene. In agentview_high.png (1024x1024), the cabinet is at left, and I see gray handles at approximately: rows ~480-520 (upper), ~640-660 (middle), ~700-720 (bottom)? Let me look at the image again: handles at approximately (col~285, row~500), (col~300, row~590?), (col~300, row~660), (col~300, row~710). Hmm, in the 1024 image I see handles: one at ~(280,490), one at ~(300,590), one at ~(305,655), one at ~(300,710). That's 4? The description mentioned 3 drawers.
+
+Let me back-project those pixels to get world coordinates, then I can determine which handle is the middle drawer.
+
+Actually the cabinet appears large in this seed — quite big, extending from row ~370 to ~840 in agentview. Hmm, wait, in this scene the cabinet front faces image-right (toward +x? or -x?). Let's compute using back_project.
+
+Let me back-project a few handle pixels. Note the agentview_high image: I need to see it more precisely. The image shown in the second embedded output is 1024x1024. Let's identify handle positions.
+
+From the displayed image (1024x1024), cabinet body occupies roughly col 0-320, rows 370-845. Handles (gray cylinders) protrude right: I see at approximately (row ~480, col ~300), (row ~585, col ~305), (row ~655, col ~310), (row ~710, col ~305). Hmm actually looking again: there seem to be 4 gray handle-ish things: at rows ~475, ~585, ~650, ~705.
+
+Let me use `segment` maybe to find handles; or just back_project several points and evaluate z heights. Also note eef home z = 1.171. Table z in kitchen? Let's determine table height via back_project on the table.
+
+Plan:
+1. back_project on handle pixels and table pixels to get 3D heights.
+2. Determine the lowest/middle/upper handles.
+3. move_pose to pre-contact pose near the middle handle with appropriate pitch/yaw (the seed-0 recipe pitch -1.15, yaw 0.95 gives a wrist view looking at the cabinet face).
+
+Wait, in seed 0 the pose was x=0.06 and the reached pose x=0.0064. The handles at that point... The cabinet handle contact is at x≈-0.1 maybe. Let's compute properly in this scene.
+
+Let's start with back_project calls.
+I [api] [thinking] Interesting. Handles world x ~0.014-0.07, y ~ -0.145. Table z ~0.90. Handles at z: 1.098, 1.024, 0.955 (rows 478, 585, 655). Row 710 gave z 0.9551 too (probably handle at the same handle, lower part or another pixel not exactly on handle).
+
+Hmm, so the cabinet front is at y ≈ -0.145 (handles at y=-0.145; cabinet face maybe y≈-0.16?). Wait, the cabinet face normal along y? Handles protrude in +y direction? Handles at y=-0.145 and cabinet body... Let me check cabinet face pixel: e.g. col 200, row 600.
+
+Actually in seed-0, the reached contact pose was [0.0064,-0.1300,1.0246] with pitch -1.15, yaw 0.95 — so the cabinet face is near y≈-0.15 and handles protrude toward +y? Hmm eef y = -0.13 which is slightly greater (more +y) than handle y=-0.145. So cabinet front face is at y≈-0.16 or beyond, and handle protrudes to y≈-0.145? Actually handle tips might be at y ≈ -0.125. So contact point y ≈ -0.13. That matches nicely: cabinet at y = -0.16 to -0.30 (deeper negative y), handles protrude toward +y outward from face.
+
+Wait, but actually in the agentview image the cabinet is at image LEFT. Since the camera is... The robot arm is at top center. Hmm, from the wrist camera image, the cabinet at right side and stove at left. The eef yaw? Anyway world coords suffice.
+
+So handles: three at z ≈ 1.098 (upper), 1.024 (middle), 0.955 (bottom). Which is the middle drawer? If there are 3 drawers with handles at 1.098, 1.024, 0.955 — hmm those spacings are 0.074 and 0.069. That seems small for drawers of 0.07 height? Actually LIBERO cabinet (wooden cabinet with 3 drawers) drawer heights are maybe 0.1 each. Hmm. Wait, but the cabinet in this image looks quite tall (from row 370 to 840 in image ≈ 0.9 to 1.15?). Let me examine more carefully at higher detail — read the image file itself and inspect visually.
+
+Actually let me also check: row 478 col 300 gave z=1.0977. But maybe that pixel is on the cabinet top surface or on a different object. Let me read the image and look at the handles visually with an exact reading.
+
+Let me read image with read_image to view again? The embedded image already shown. In the 1024 image: cabinet's upper region top edge around row 370. I see handles around... The image displayed shows: three/four gray horizontal cylinders near the cabinet's right face at approximately rows 470-720. Actually in the display I count: at (col≈290,row≈500) a vertical-ish gray cylinder, then (col≈300,row≈590), then (col≈310,row≈655), and (col≈305,row≈710). Hmm 4 items.
+
+Let me use segment with prompt "gray drawer handle" to see mask overlay. Or better, examine region: use back_project region mode over the handle area to see z distribution.
+
+Alternatively look at the wrist image: the cabinet at top-right; I can see in wrist image (1024) at top right a black region, and another dark region... rows 30-380 col 800-1024 - that's the cabinet body top? Hmm.
+
+Actually, the wrist high image shows the cabinet handled region at right: I see at col ~830-950, rows 0-60 two gray cylinders? Hard.
+
+Let me just crop mentally: In the agentview high image, the handle-like gray cylinders are near col 270-330. Let me sample pixels along col=300 vertically to find handle z's: rows 460..730 step 10. That's many calls. Alternatively use region mode over col 285-330, rows 460-740 and check distinct z clusters? Region mode returns midpoint only.
+
+Better: use segment("the gray drawer handle") to get overlay, then use point prompts for each handle.
+
+Actually maybe simpler: read the image and zoom by... read_image only reads full artifact; can't crop. Hmm.
+
+Let me just do a vertical scan of back_project at col=300 for rows 460,470,480,...,740. I can batch multiple calls in one block. 20 calls is a lot but fine. Let's do rows 460-740 step 20 (15 calls). Actually pixels on the handle only hit the handle if the pixel is on it; between handles we get cabinet face (x more negative). We can distinguish: handle pixels give x≈0.01-0.07 (protruding), cabinet-face pixels give x ≈ -0.02 or so (receded). Hmm actually the cabinet face is at x ≈ -0.02? Wait which direction does the face point?
+
+From row 478 col 300: x=-0.0135. From row 585 col 305: x=0.0143. Row 655 col 312: 0.0148. Row 710 col 308: 0.0692?? That's much further +x. Hmm, that's weird — 0.0692. Maybe that pixel is on the handle end knob. Or on the plate? The plate is near col 400-590 rows 650-780. col 308 row 710 might be on... hmm.
+
+Let me check the cabinet face at col 250 for various rows to establish.
+
+Actually let's do a scan.
+I [api] [thinking] Hmm, confusing. The world z doesn't monotonically decrease with row, which suggests the camera view of the cabinet is skewed (the cabinet front is angled). Values:
+
+- (460,300): x=-0.132, y=-0.169, z=1.024 → this is probably cabinet top surface? z=1.024?? Hmm.
+- (500,300): x=0.010, y=-0.142, z=1.097 → handle at upper
+- (530,300): x=0.038, y=-0.138, z=1.095 → handle
+- (560,300): x=-0.082, y=-0.169, z=0.963
+- (610,300): x=0.040, y=-0.146, z=1.024 → handle middle
+- (640,300): x=0.069, y=-0.142, z=1.023 → handle
+- (680,300): x=-0.011, y=-0.166, z=0.900
+- (730,300): x=0.040, y=-0.159, z=0.900
+
+So the pixels at x≈0.01-0.07 are the handles (protruding toward +x direction? hmm x positive). And pixels at x≈-0.08 to -0.13 with z odd values are cabinet front face.
+
+Wait no. Let me reconsider: cabinet front face normal might be along +x, not +y! Handles protrude in +x, at y ≈ -0.14 (constant), x from ~0.0 to 0.07 for the knob. And the cabinet face is at x ≈ -0.02 to -0.01.
+
+Hmm, but then handles at y=-0.14 constant, and the drawer front panel normal along x? Actually a handle that's a horizontal cylinder along y (like drawer pulls) would protrude in... no.
+
+Let me reconsider: A drawer pull handle is typically a horizontal bar along the drawer width. If the cabinet front faces +x (toward robot at -x region?) Actually robot eef home pos is x=-0.2166, y=0.00955, z=1.171. So the robot base is at -x. The cabinet front faces +x?? That would face AWAY from the robot. That doesn't seem right.
+
+Hmm. Actually in these LIBERO kitchen scenes (wooden cabinet), the cabinet is on the table at one side. Let's check: handles at x≈0.01..0.07 and z. The cabinet face where x≈-0.01. The handle protrudes in +x direction... but wait maybe the handle axis-aligned bar extends along x, and the pixels hit different points along the bar's length. The bar would be a cylinder along x (drawer pull along the drawer's width). If the cabinet front faces +y (i.e., normal +y), a horizontal bar pull would run along x. Then handle bar spans x from maybe -0.05 to +0.07, at y≈-0.14 (protruding from face at y≈-0.16).
+
+That makes sense! The face is at y≈-0.165 (pixels x=-0.08..-0.13, y=-0.166..-0.169) and the handle bar at y≈-0.138..-0.146 spanning x from 0.01 to 0.07. So drawer pulls run along world x, cabinet front faces +y. Robot eef at y=+0.0096 → yes robot is on +y side of the cabinet. And image left/right...
+
+Wait but in seed-0, the contact reached pose was [0.0064,-0.1300,1.0246] with yaw 0.95 and pitch -1.15. Yaw 0.95 rad ≈ 54°. Hmm, that's a slanted gripper. Interesting. And the contact y=-0.13 which is just outside the handle bar (y = -0.138 tip). Consistent: reach y=-0.13 to be at the handle bar.
+
+Hmm, but wait: is cabinet front facing +y for real? Also the cabinet drawer-facing direction: In the agentview image, the cabinet occupies the left side, and the handles are on its right face in image → consistent with handles facing toward camera-right. Camera is placed... whatever.
+
+Now z: handles at z≈1.096 (upper, rows 500-540), z≈1.024 (middle, rows 610-640), z≈0.955/0.963? (the row 655 col 312 gave 0.9546; and row 710 col 308 gave 0.9551 with x=0.069). Hmm. So bottom handle at z≈0.955.
+
+But wait, drawer handles at z from 0.955 to 1.096, i.e., 0.07 spacing. The cabinet's table is z=0.90 (table top). Cabinet total height would be maybe 0.30. Hmm, only 3 handles within 0.14 range? Hmm, plus earlier the (460,300) gave z=1.024 at x=-0.132 — a different location (cabinet top surface, since row 460 col 300... no).
+
+Hmm, let me reconsider — maybe the mapping is not straightforward; the cabinet is tilted in the image. Let me check more handle pixels to distinguish real handles. Maybe there are more than 3 handles, and the cabinet top is above z=1.127.
+
+Note the earlier (655,312) = z 0.9546, x=0.0148, y=-0.1477 - a handle. And (710,308)=0.0692,-0.1437,0.9551 - also likely same bottom handle at its far end (larger x). So bottom handle at z≈0.955.
+
+So three handles: z≈1.096 (row 500-540), z≈1.024 (row 610-640), z≈0.955 (row 655-710).
+
+Wait — that seems weird: rows 540→610 should be the gap between upper and middle handles. Hmm the middle handle spans rows ~600-650. And bottom spans rows 655-715?? That means bottom and middle are adjacent without gap, while upper→middle gap rows 540-600. Eh, possible: The perspective compresses.
+
+Hmm, actually maybe there are 4 handles (LIBERO cabinet has 3 drawers... the standard libero "wooden cabinet with 3 drawers"? Actually libero has "wooden_cabinet" with 3 drawers? The task says middle drawer, implying at least 3.
+
+Also from the wrist image (step 0), right side: I see dark cabinet with gray handles at top-right: two gray cylinders around (row ~30-100, col~850-950) plus more further down at (row~380, col~760-830)? The wrist image shows the cabinet's front face at right, with handles visible.
+
+Let's just verify by segmenting. Let me call segment with prompt "gray drawer handle" on agentview and inspect overlay. That gives one mask though.
+
+Alternative: carefully re-inspect the high-res image. Let me read_image of agentview_high.png at step 0 — it's likely displayed larger. But I already saw it. Let me count handles in the displayed image: Looking at the picture: gray cylinders appear at approximately:
+1. (col≈285, row≈490) — a cylinder extending right-down
+2. (col≈295, row≈585)
+3. (col≈300, row≈650)
+4. (col≈305, row≈710)
+
+Hmm 4 handles. If 4 handles... but LIBERO goal "open the middle drawer" — the standard libero_goal task t0 is "open the middle drawer of the cabinet" (there are 3 drawers in the "wooden cabinet" asset? Actually libero wooden cabinet has 3 drawers... and there's a "cabinet" with 3 drawers in libero_goal: "open the top drawer", "open the middle drawer", "open the bottom drawer" - these are 3 separate tasks in libero_goal).
+
+Let me look at the memory for goal_task_t1 and t2 to see which languages correspond, might hint at handle count/location.
+
+Actually let me read MEMORY.md and the global contact-skill-state-change leaf, plus check t1/t2 task families quickly. But more useful: figure out handle z positions precisely.
+
+Let's do back_project along col=290 and 310 at rows 480..730 step 10, checking for z near distinct values with x>0 (handle).
+
+Actually the values above are enough: I'm fairly confident of 3 handle bands at z≈1.096, 1.024, 0.955. But the (row 460, col 300) z=1.024 with x=-0.132 is odd — maybe it's a pixel on the cabinet top/back? z=1.024 with x=-0.132 and y=-0.169: that's a horizontal top surface? A cabinet top at z=1.024? But handles go up to 1.096, above 1.024 — impossible if the top were at 1.024.
+
+Hmm. So maybe the coordinates aren't as I think. Perhaps the "depth" world map at those positions is weird. Let me instead check the seed-0 audit winning pose: eef at [0.0064, -0.1300, 1.0246] opened the BOTTOM drawer. Interesting! z=1.0246 = exactly our middle handle band. Hmm! Wait, seed 0's success pose z=1.0246 with the pose that "should" be at the bottom drawer... but it terminated with the bottom drawer open. Hmm, that depends on where the handles were in seed 0's scene (swap-randomized? goal tasks have fixed layouts across seeds typically... but scene positions differ per seed since this is a different scene).
+
+Hmm — critically: in seed 0's scene the cabinet may have been at a different place/height. Actually the audit says pre-contact pose z=1.025 and the actual reached pose z=1.0246. And they instructed "low pose so wrist centers the lowest handle". So in seed 0, z=1.025 was low enough. In our scene, the z range of handles is 0.955–1.096.
+
+Hmm, but hold on. Maybe in our scene the handle z values from back_projection are correct, but the pose z chosen in seed 0 (1.0246) is where the EEF sits, and the wrist camera looks downward/forward at pitch -1.15 (pointing... pitch -1.15 rad means gripper tilted). The eef z doesn't need to equal handle z; with a tilted gripper the offset matters.
+
+Let's think about pitch convention: pitch -1.15 rad ≈ -66°: the gripper points nearly horizontally, tilted. With that orientation, the eef can approach the cabinet front from +y side with the fingers extended toward -y.
+
+Given uncertainty, I'd rather rely on Pi0 grounding with a good setup pose: eef positioned at the height of the MIDDLE handle, tilted to look at cabinet front, then pi0_doubled with prompt "pull the middle gray drawer handle outward".
+
+Hmm, careful: risky. Pi0 grounding on drawer handles: the prompt "open the middle drawer of the cabinet" is the task language, which is likely the training language for this exact task. Actually in LIBERO, the language for this task is exactly "open the middle drawer of the cabinet"—Pi0 was trained on LIBERO so the verbatim prompt is likely the best! The memory says for the bottom drawer task the verbatim prompt opened the upper drawer instead (due to pose centering on upper handles). So pose selection (which handle dominates in the wrist view) drives which drawer Pi0 opens. That's a solid insight: put the eef at middle-handle height and the middle handle will dominate.
+
+So: eef z should be near middle handle z. But what eef z corresponds to handle z given the tilted pose? In seed-0, contact pose z=1.0246 for a handle at... unknown. Their prompt was "lowest gray drawer handle" and the eef z was 1.0246. Our scene handles at z 0.955/1.024/1.096 — and the seed-0 winning eef z of 1.0246 happens to match our middle handle z (1.0244). Hmm! That's suspicious in a good way: perhaps the cabinet is in the same position as seed 0's scene (fixed layout for goal tasks) and the handles are at z 0.955 (bottom), 1.024 (middle), 1.096 (top). And seed-0's winning eef z=1.0246 equals the middle handle z but they successfully opened the BOTTOM drawer? That contradicts — unless the handles in seed 0's scene were at those z's but they interpreted "lowest visible gray handle" differently...
+
+Hmm. Wait, maybe in the seed-0 scene the cabinet was positioned differently (goal tasks: the "swap" regime randomizes; "task" regime is standard). The suite here is libero_goal task t0 seed 0 — the same as the reference! The prompt says "You are now running a DIFFERENT seed — object/fixture positions differ". But the cell says seed 0. And the reference is goal_task_t0_s0 (task regime). Hmm, the cell says suite libero_goal, task 0, seed 0. The memory archive was named goal_task_t0_s0. So it might be the SAME scene! But our task_language is "open the middle drawer of the cabinet" while the reference said "open the bottom drawer of the cabinet". So different task, different init possibly.
+
+Actually in LIBERO, each task has its own init state. So coordinates differ between tasks. In our scene, cabinet at x∈[-0.13,0.07], y≈-0.14/-0.17.
+
+Anyway, in seed-0's bottom drawer scene, the handles would be at similar heights: probably the bottom handle at z≈0.955 in that scene too... but their eef z=1.0246. Hmm, with pitch -1.15 and yaw 0.95, the eef is above and behind the handle: the fingers extend toward -y and downward-ish so the effective contact point could be lower than eef z by ~7cm. Plausible! pitch -1.15 means the gripper axis tilted: eef z 1.0246 → contact z ≈ 0.955. Good, that's consistent: their "contact" was at the bottom handle z≈0.96.
+
+So the eef-height offset ≈ handle_z + 0.07 for middle drawer: eef z ≈ 1.024 + 0.07 = 1.094. Hmm, but that would be near the top handle. Wait, but the pose also matters for which handle dominates the wrist view.
+
+Hmm, careful. Let's reconsider: maybe both interpretations. Let me compute more reliably what pose puts the gripper at the middle handle.
+
+The approach: I can move to a pose and check the wrist camera image, iterating (this costs steps but we have budget). Use move_pose with pitch/yaw from seed-0 (pitch -1.15, yaw 0.95) at a z of about middle handle z + 0.06, x near handle x (0.03), y around -0.10 (in front of handle). Then look at wrist_high to see which handle is centered, and adjust.
+
+Wait, but also yaw 0.95 — the gripper rotated 54° about z. With the cabinet front along +y, an 0.95 yaw slant seems odd but it's what got the fingers to the handle in seed 0. Since our seat/appearance is same cabinet type, probably fine.
+
+Alright: also consider a simpler robust approach: direct scripted pull. Grasp the handle with fingers? The memory says scripted pushes plateaued below threshold; only pi0_doubled succeeded. So use pi0_doubled.
+
+Plan:
+1. Read MEMORY.md + global contact-skill leaf (quick).
+2. Move_pose to pre-contact: iterate to center the MIDDLE handle.
+3. pi0_doubled with prompt "pull the middle gray drawer handle outward" (spatial qualifier per memory) — maybe ladder: first spatial prompt, since memory says spatial prompt beat verbatim for the bottom.
+
+Hmm, but for the middle drawer, risk: spatial prompt might ground to nearest handle which could be upper or bottom. The memory says for bottom drawer "pull the lowest gray drawer handle outward" worked and verbatim opened the upper drawer. For middle, a good spatial prompt: "pull the middle gray drawer handle outward".
+
+Let me now check global memory + quick look at whether other goal tasks (t1, t2 etc.) in this suite have relevant drawer knowledge. Since environment likely traps, let me quickly read MEMORY.md and global leaf list.
+I [api] [thinking] Read contact-skill-state-change global leaf (relevant to drawer).
+
+Also maybe libero_goal_task_t1 / t2 might be "open the top drawer", which would be useful. Let me read those too — they may describe handle positions and prompts. Quick.
+I [api] [thinking] Good context on the kitchen frame: plate around z 0.907, and the stove region. Also our scene's table z is 0.9004 — matching.
+
+Now, key decision: which handle is the MIDDLE drawer? From back_projection: three z bands at ~1.096, ~1.024, ~0.955. Let me verify whether there might be a 4th handle higher (rows < 500)? Let me check rows 420-480 at col 290 to see. Row 460 col 300 gave x=-0.132, z=1.024 — that's odd; probably a background/edge pixel. Let me check col 285, rows 440, 420, 400.
+
+Actually let me instead use the wrist camera: the wrist at home looks down. In the wrist image the cabinet appears at top-right with gray handles clearly visible. Wrist image 1024: I see the cabinet (dark) at right; handles at around (row 30-90, col 840-950) - two bars? and at (row 380-430, col 760-840) another pair? That image is rotated relative to the world.
+
+Better: use segment on agentview with a point prompt for each handle to get mask medians. Let's do point prompts at (500,300), (610,300), (680,310)... hmm those pixels may be on the handle already per back-projection (x≈0.04 → protruding).
+
+Actually I think we have enough: three handles at z ≈ 1.096, 1.024, 0.955, all with x ∈ [0, 0.07], y ≈ -0.14.
+
+Hmm wait, but the top handle z=1.096 — is that the "top drawer" handle? The cabinet: does the LIBERO cabinet have 3 drawers? Let me double check by counting distinct handles in the image visually once more with a segment overlay. Use segment prompt "the gray drawer handle" on agentview at step 0; the overlay shows which one got picked. That's one call and informative.
+
+Actually more valuable: point-prompt segments at the three candidate pixel locations to get robust medians and check shapes. But each segment call returns an overlay image I can inspect. Let's do it: 3 calls in parallel? They're independent — yes, batch them. But careful: multiple segment calls in same block, each on step 0 agentview, fine.
+
+Actually a single text prompt might trigger on all handles. Let me do segment with point prompts at (500,300), (610,300), (680,310).
+
+Hmm... but I want to also verify the cabinet "middle drawer" identity — the drawer front panels are separated by horizontal lines. Looking at the agentview image: cabinet body from rows ~370 to ~845. I can see a horizontal dark line at around row 540? Let me look at image again mentally... Hard.
+
+Alternative sanity check: The extracted handle z values: 1.096, 1.024, 0.955 — that's 3 handles spanning 0.14m. The cabinet presumably from z≈0.90 (table) to z≈1.2. If drawer heights ~0.09 each and there are 3, handles centered at 0.955, 1.045(ish)... hmm our values 0.955, 1.024, 1.096 — spacing 0.069 and 0.072. Cabinet top around 1.14? Then drawers from 0.90 to 1.14, three of height 0.08: centers at 0.94, 1.02, 1.10. Perfect match! So yes, three drawers with handle centers at bottom=0.955, middle=1.024, top=1.096.
+
+Good. Middle drawer handle center: (x≈0.035, y≈-0.143, z≈1.024).
+
+Hmm, one wrinkle: are there really exactly 3? What about the row-460 pixel giving z=1.024 with x=-0.132? That x=-0.132 with y=-0.169 → that's the cabinet's other side face? The cabinet spans x from about -0.13 to +0.07? So x=-0.132 is the far edge (cabinet's back-left side). z=1.024 there could be a pixel on... hmm, it could be the handle on the OTHER side of the cabinet (a drawer pull spanning the full width? no).
+
+Wait: reconsider. The cabinet may be oriented with its drawer face toward +x? Hmm. x=-0.132 y=-0.169 z=1.024: that could be the tip of a handle at the cabinet's far side... Confusing, but the pattern of handles at y≈-0.14 and x∈[0,0.07] is a horizontal bar along x — meaning the drawer face is perpendicular to y (facing +y). Both handle ends project to similar y but different x, that's the bar length.
+
+OK. Also the "row 460" pixel — maybe it's on the raised back panel/wall. Never mind.
+
+Now the plan for contact. Approach: mirror the seed-0 winning recipe but at middle height:
+- move_pose to [0.03, -0.10, 1.09] with target_pitch=-1.15, target_yaw=0.95, gripper=-1, step_clip=0.005, max_steps=180, tol=0.018.
+- Inspect wrist to see which handle centered; adjust z until the middle handle is centered (ideally slightly dominant).
+- pi0_doubled prompt "pull the middle gray drawer handle outward", max_chunks=35.
+
+Concern: y. Seed-0 pre-contact y=-0.13 (which is basically at the handle). Our handle bar y≈-0.142. So approach y=-0.10 (a bit in front, +y side), then let pi0_doubled move in. Hmm, seed-0 used -0.13. Maybe start at -0.09 and see. Actually the risk: if the eef is too close it may collide/collapse the handle. With pitch -1.15 the fingers point mostly downward-forward.
+
+Let's think about what pitch -1.15 means geometrically. Default eef quat at home = [0.999, 0.0237, -0.0265, 0.0075] — approximately identity-ish (w~1), corresponding to gripper pointing downward. In this convention, the eef z-axis points along the gripper's approach direction. rotate_pitch(-1.15) tilts the gripper so its approach axis points forward toward... -1.15 rad rotation about world X. If the gripper approach is -z (downward), rotating by -1.15 about x: new axis = ... rotation about x by angle θ=-1.15: (0,0,-1) → (0, -sin(θ)*(-1)... let's compute: R_x(θ): y' = y cosθ - z sinθ; z' = y sinθ + z cosθ. For v=(0,0,-1): y' = -(-1) sinθ = sinθ = sin(-1.15) = -0.913; z' = -cosθ = -cos(-1.15) = -0.408. So approach direction = (0, -0.913, -0.408): pointing toward -y and downward. Great: from +y side reaching toward -y into the cabinet face. Consistent.
+
+And yaw 0.95 rotates about z afterwards? rotate_wrist rotates about world Z. Yaw 0.95 means the gripper's fingers are angled 54° in the xy plane. Hmm, that would make the approach direction (0,-0.913,-0.408) rotated by yaw 0.95 about z: x' = -(-0.913) sin(0.95)... Let's compute R_z(0.95) applied to (0,-0.913,-0.408): x' = x cos - y sin = 0 - (-0.913)(0.8134) = 0.743; y' = x sin + y cos = 0 + (-0.913)(0.5817) = -0.531; z'=-0.408. So approach points toward +x and -y, downward. Hmm — so the gripper approaches at 54° to the cabinet face, not perpendicular. That's the "yawed" approach which they found worked. Interesting given handle bar is along x: an angled approach to grab the bar. OK.
+
+The memory noted "co-vary-pitch-clears-yawed-reach-wall". Fine.
+
+Given the seed-0 contact pose was eef [0.0064, -0.1300, 1.0246] and it opened the bottom drawer (whose handle z ≈ 0.955 presumably): so eef z = handle z + 0.07, and eef x = 0.0064 vs handle x ≈ 0.035, eef y = -0.13 vs handle y=-0.142 (i.e., 0.012 in front).
+
+By analogy for the middle drawer: eef = handle + (dx≈-0.03, dy≈+0.012, dz≈+0.07) → [0.005, -0.13, 1.094]. Hmm interesting: that's exactly our top handle z (1.096) — meaning if the wrist-view centering drives which handle Pi0 grounds to, eef at z=1.094 for the middle drawer... the wrist view at that pose would center on something above the middle handle. Hmm, but this arithmetic is speculative: the seed-0 z offset assumption came from assuming their bottom handle was at 0.955.
+
+Alternatively: seed-0's scene had handles at different z (bottom=0.955 in seed-0's scene too? since layout of cabinet is probably the same across tasks? No—different task, so different init).
+
+Actually let me reconsider: in the seed-0 bottom-drawer scene, the prompt was "pull the lowest gray drawer handle outward" and it terminated. Their pose was chosen low, z=1.025. If in their scene handles were like ours (0.955,1.024,1.096), then eef z=1.0246 aligns with the MIDDLE handle, yet the bottom drawer opened. That suggests either the z alignment isn't decisive, or the prompt's "lowest" did the grounding. Also possible their scene had handles lower.
+
+Hmm. Honestly the safest path: get the eef pose so that the MIDDLE handle is centered/dominant in the wrist view at contact geometry, using the wrist image to verify. Then prompt "pull the middle gray drawer handle outward".
+
+Given the geometric mapping (eef 7cm above contact), the middle handle at z=1.024 → eef z≈1.09. But then wrist would see the top handle too. Alternatively with pitch -1.15, maybe the visual centering in the wrist is different.
+
+Let's just do it empirically: move_pose to [0.02, -0.10, 1.06] with pitch -1.15, yaw 0.95 first (approach a bit above/front), inspect wrist, then decide.
+
+Actually, another consideration: maybe better to approach with y=-0.05 (further from cabinet) to avoid collision, then let pi0_doubled drive. pi0_doubled is closed-loop Pi0 so it will move toward the handle itself. The memory's key insight was the pose controls grounding. Fine.
+
+Also safety: moving from home (-0.2166, 0.0096, 1.171) to (0.02,-0.10,1.06): Δx=0.24, Δy=-0.11 → within 0.30. OK, single move_pose.
+
+Let's also confirm no obstacles: the plate is at around x 0.03, y 0.0? From t1 memory: plate at x 0.03-0.05, y -0.04..0.02 → that's the same scene roughly (our agentview shows plate at bottom-center). Hmm, the plate in our scene: bottom center around (row 700, col 480). back_project earlier (700,600) gave (0.0098, 0.0677, 0.9004) — that's table. Let me get plate position: it's not needed since our path goes to y=-0.10 which is between cabinet and plate. Plate y ≈ -0.02? Our path at y=-0.10, z=1.06 is well above.
+
+Now let's do it. First move_pose to approach pose, then inspect wrist.
+
+Let me pick pre-contact: xyz [0.02, -0.09, 1.07], target_pitch -1.15, target_yaw 0.95, gripper -1, step_clip 0.006, max_steps 200, tol 0.018. Then inspect wrist_high.
+
+Actually wait — the wrist camera at pitch -1.15 will look toward -y and downward, so it should see the cabinet front. Good.
+
+Let's go.
+I [api] [text] Memory read. Task: **"open the middle drawer of the cabinet"**. Handles localized via back-projection (three bands): bottom z≈0.955, middle z≈1.024, top z≈1.096, all at y≈-0.14, x≈0.01–0.07. I'll approach with the proven seed-0 cabinet pose (pitch -1.15, yaw 0.95) aimed at the middle-handle zone, then use `pi0_doubled` as a contact pull.
+I [api] [thinking] The wrist view now shows the cabinet's handles region. The wrist camera is looking down at the cabinet front. I see the drawer front with 3 handles visible: one upper-left (rows ~450-620 in wrist image), one middle (rows ~570-700), one lower-right (~740-860). Plus the gripper fingers at bottom.
+
+The wrist image shows 4 handles? I see: top-left handle at (row ~520, col ~150), middle at (row ~640, col ~350), lower-right at (row ~800, col ~660), and one at bottom-center (col ~640, row ~810)? Hmm, there's also a small gray stub at (row ~527, col ~285) and (row ~660, col ~460) — those look like handle mounting pegs.
+
+Actually the LIBERO cabinet drawer handles: each drawer has one horizontal bar with two mounting pegs. In the wrist view I see three bars (each with pegs). Good.
+
+Now, which one is the middle in the wrist view? The wrist view geometry: The image is rotated; the top-left bar appears highest in world? Let's map wrist pixels back to world with back_project camera=wrist to know the z of each bar.
+
+Let me back-project: wrist pixel (520,150) → bar1; (640,350) → bar2; (800,660) → bar3. Let's compute world z for each.
+
+Also, in the agentview after this move, the eef is at x=0.0032, y=-0.09, z=1.0696. In the agentview image the gripper is at around (row 480, col 470)? The handles near the left... 
+
+Let me back-project the wrist handle pixels.
+I [api] [thinking] The wrist mapping is strange. (520,150) → z=0.8999, that's table height? y=-0.18. Hmm, that pixel appeared to be on a handle. z=0.90 = table top, but y=-0.18... The cabinet's back? Hmm, pixels on the handle bar should be at handle z (0.955-1.096) and y≈-0.14.
+
+(645,350) → z=0.9922 y=-0.1685, x=0.047. Hmm.
+(800,660) → z=1.0869, y=-0.1364, x=0.0526. That matches the middle-ish handle... no wait, 1.087 is near top handle band (1.096).
+
+Hmm, the z values from wrist: 0.90, 0.992, 1.087. These are spread. Perhaps the wrist image y-axis increases toward lower world z in this orientation (camera looking down-forward). So bar in upper part of image (row 520) → lower z... no: row 520 → z 0.90, row 645 → 0.99, row 800 → 1.087. So lower in the image = HIGHER z. That means the image is upside-down-ish relative to world up. OK.
+
+Hmm, but wait, these points seem to be on the handle bars, and the z spread 0.90→1.087 across rows 520→800 is huge (0.19). If the three bars are at z 0.955, 1.024, 1.096, then a point at row 520 z=0.90 isn't on a bar — unless it's the drawer front/side. Hmm.
+
+This compound mapping is getting confusing. Since the wrist camera pose is tilted, the depth/world map may have many pixels hitting weird surfaces.
+
+Better approach: don't over-analyze the wrist geometry. Instead use the agentview to check where the eef now is relative to handles. In the agentview (1024) after the move: the gripper tip appears at around (row 500, col 430)? Actually the gripper in agentview_high after move is at center: the fingers near (row 490-540, col 380-450). The handles are at col ~270-320, rows 480-720. So the eef is still ~0.1m away in +x from the handle (its x = 0.003 while handle x≈0.03 but pointing...). Hmm.
+
+Let's think again about geometry of the cabinet. From agentview: the cabinet's drawer face — which way does it face? Looking at the agentview image: the cabinet occupies bottom-left, dark, with 4 gray handles on its right-facing side. The handles appear on the face that is oriented toward the camera-right, i.e., toward +? The plate/robot is to the right of the cabinet in the image.
+
+From back-projection: handle pixels col≈300 → x≈0.04, y≈-0.14. Cabinet face pixels (col 240) → x≈0.096?? That was (600,240) → x=0.0958, y=-0.1689, z=1.0859. Hmm! x=0.096 > handle x=0.04. So cabinet face pixels at col 240 have LARGER x than handle pixels at col 300?
+
+Confusing. Wait — (600,240) z=1.0859 looks like it's on a handle bar too (z 1.086 = top handle band). Hmm, but it's at col 240, further left in the image, x=0.0958.
+
+Hmm! Maybe the handle bars are long along... Let's nail the cabinet orientation properly: the two gray bars visible in the wrist image extend diagonally from upper-left to lower-right; and back-projected their endpoints (520,150)→(0.039,-0.180,0.900)?? that has y=-0.18.
+
+I think the depth/world map on the thin handle cylinders is noisy (edges). Let me instead use the drawer front panel: pick pixels on the flat dark panel between handles in agentview and check. E.g., (560, 270)? Actually let me use a different approach: use back_project region mode on a window covering the cabinet's front panel to get a midpoint, and also on the drawer front.
+
+Alternatively, use the segment tool on the wrist camera to get the drawer fronts? Hmm.
+
+Let me step back and think about what actually matters. pi0_doubled is a closed-loop policy: given the wrist view and prompt, it will move toward and pull the drawer. The memory's lesson: pose height selection determines which drawer it grounds to. What we need: the middle drawer prominent/centered in the wrist view.
+
+Currently the wrist view shows all three handles roughly along a diagonal, with... hmm. Let me look again at the wrist image at step 1:
+- A bar from (490,20) to (640,230)? Its far end at upper-left; there's a peg at (525,290).
+- Another bar from (680,180) to (830,420), peg at (660,455).
+- Another bar from (740,620) to (870,780)?? at right, partially occluded by the gripper finger.
+- And the gripper fingers (black) at bottom left (row 780-860, col 130-260) and (row 780-860, col 760-900).
+
+Hmm, so the wrist sees 3 bars with the middle bar closest to center (~(755,300)). The eef is at z=1.0696.
+
+Given the mapping lower-in-image = higher z: row 520 → z 0.90 (hmm that contradicts being a bar)...
+
+Let me verify the wrist camera's orientation empirically: the gripper fingers appear at bottom of the wrist image; the eef is at z=1.0696. The fingers are at bottom (rows 780-860). So lower rows = the gripper plane. And high z... ugh.
+
+Honestly, a cleaner approach: use the agentview and the EEF pose to compute where to put the eef. The agentview gives the handle world positions robustly (multiple consistent samples: z bands 0.955/1.024/1.096, y≈-0.14, x 0.01..0.07).
+
+But then I need to know the correct EEF offset. Instead of guessing, maybe use rotate_pitch/move_pose to place the eef exactly at the middle handle: eef xyz = [0.03, -0.10, 1.024 + small]. With pitch -1.15 the fingers extend down-forward, so the contact point is below the eef — I should position the eef higher than the handle by the amount the fingers protrude along the approach axis. But pi0_doubled will handle the fine approach anyway.
+
+Key risk: if the eef is at handle height with pitch -1.15, the fingers might collide with the drawer front. Hmm, but the fingers approach from +y and below... 
+
+Alternative: let's consider the orientation more carefully. pitch -1.15 with yaw 0.95 gives approach direction (0.743, -0.531, -0.408) computed earlier (pointing +x, -y, down). So the fingers extend toward +x/-y/down. If the eef is at (0.003, -0.09, 1.07), the fingers extend to about (0.003+0.05, -0.09-0.036, 1.07-0.028) ≈ (0.053, -0.126, 1.04) for a 6.7cm finger offset. So the fingertips are right around the middle handle (x 0.03-0.07, y -0.14, z 1.024)! 
+
+So the current pose with eef z=1.0696 puts fingertips at the middle handle. Hmm, but the drawer front face — where is it? If the face is at y≈-0.16, the fingertips at y=-0.126 are 3.4cm in front. Good.
+
+Now which drawer would Pi0 ground to? The fingertips near the middle handle. The seed-0 recipe used this exact pose family (z=1.025) — wait, they used eef z = 1.025, which with the same finger offset points to z ≈ 0.955 = bottom handle. That's consistent with their bottom-drawer success! Great, the model is coherent: eef z = handle z + 0.07 for this pitch/yaw.
+
+So for the MIDDLE drawer: eef z ≈ 1.024 + 0.07 = 1.094. Currently z=1.0696 → fingertips at ~0.999, slightly low (between bottom and middle, closer to middle at 1.024? Actually fingertip z=1.04 per my calc). Ugh, my calc is ambiguous.
+
+Let me be more careful about the finger offset. The gripper: eef_pos is typically at the wrist/gripper base center or between the fingers? In LIBERO/Robosuite, eef_pos = site at the end effector (between fingers, typically at the gripper's tool center point, slightly beyond the fingers' base). The fingers extend ~4cm downward from the tcp in the approach direction.
+
+Anyway: seed-0 eef z=1.0246 grounded the bottom drawer (handle z 0.955 in a scene presumably identical cabinet type). If their scene's handles were at 0.955/1.024/1.096 like ours (the cabinet geometry is a fixture asset — same asset, so same relative handle z if the cabinet is on the same table height!). Since both scenes are libero_goal kitchen with table z=0.90, the cabinet asset is identical → handles at same z's. That's a strong argument: the cabinet is the same asset in same orientation at same table height. Different tasks have different object placements but the cabinet fixture is likely at the same place (x,y) too — recall seed-0: contact pose x=0.0064, y=-0.130; our handles at y≈-0.14, x 0.01..0.07. Their achieved pose y=-0.13 matched our handle y!
+
+So: for the middle drawer, add the z delta between the handle bands: middle - bottom = 1.024 - 0.955 = 0.069. So eef z = 1.0246 + 0.069 ≈ 1.094.
+
+Hmm, but then z=1.094 equals the top handle's z. The fingertips would be around z ≈ 1.024-1.04, i.e., at the middle handle. OK good — consistent with tip offset ~0.055-0.07.
+
+Wait, but in seed-0, if the eef z was 1.0246 and fingertips at ~0.955 = bottom handle: yes consistent, tip offset ≈ 0.07 in z. So for the middle handle (1.024) → eef z ≈ 1.094.
+
+Hmm, but I worry: with the eef so high, would Pi0's wrist view center on the top handle and open the top drawer? The seed-0 lesson was about which handle is centered in the wrist view. At eef z=1.094, the wrist view would be centered between top and middle handle... 
+
+Ugh, ambiguity. Since Pi0 is closed-loop and promptable, maybe the safest is: use spatial-qualified prompt "pull the middle gray drawer handle outward" which directly names the middle handle, and choose the pose so the fingers align with the middle handle. If the prompt misgrounds to the top, we can retry with the verbatim task prompt ("open the middle drawer of the cabinet").
+
+Risk of a rogue motion that opens the WRONG drawer: might that break anything? If it opens the top drawer, the state is wrong and we could re-approach and pull the middle. The predicate presumably checks the middle drawer joint > threshold; opening another drawer doesn't corrupt anything (unless it obstructs). So it's recoverable-ish.
+
+There's another consideration: maybe try prompt "open the middle drawer of the cabinet" first (verbatim, matching training). Memory says verbatim opened the upper drawer when the wrist centered the upper/middle handles; with our pose target being the middle handle, verbatim should open the middle. Actually in LIBERO training, Pi0 learned to pull whatever drawer dominates the view while following the instruction. So the pose is the main control.
+
+Decision: 
+Step A: raise the eef to z ≈ 1.094 to align fingertips with the middle handle → move_pose to [0.01, -0.105, 1.094], keeping pitch -1.15 yaw 0.95.
+
+Hmm, also target x: seed-0 reached x=0.0064. Our handles span x 0.01..0.07; the bar center is x≈0.04. With the yawed approach direction (+0.743 x component), fingertips go +x of the eef. So eef x ≈ 0.006 → fingertip x ≈0.05. That's the bar's outer end. Fine, matches seed-0.
+
+So: move_pose to [0.005, -0.105, 1.094], pitch -1.15, yaw 0.95, gripper -1, step_clip 0.006.
+
+Then inspect wrist to determine which handle is most centered, then call pi0_doubled.
+
+Hmm, but I have a limited step budget presumably (episode truncation maybe ~? Unknown). We've used 1 step. Plenty.
+
+Actually, wait. Let me reconsider: is it better to first verify the middle drawer identity in RGB? The three bands are unambiguous relative to each other: middle = the one at z≈1.024. Fine. 
+
+Another thought: the drawer count. If there were 4 drawers, "middle" would be ambiguous, but standard LIBERO wooden cabinet has 3 drawers. And we found 3 bands. Good.
+
+Let's also verify: are all three handles present with equal prominence? From the agentview I see 4 gray bars (rows ~475, ~585, ~650, ~710). Hmm. 4 bars! Could some be pegs? Let's check the pixel (655,312) → z=0.9546 and (585,305) → z=1.0244. So those two are close (~row 585 and 655) but z differs by 0.07 — different handles. And row 478→z=1.0977, row 710→z=0.9551. Wait, row 710 gives z=0.9551, same as row 655 (0.9546)! So both rows 655 and 710 are the same bottom handle... at different image rows but same z? That can't be for a horizontal bar... unless it's the bar's two ends at different image rows due to perspective (the bar extends along x, and the camera is not aligned → far end appears higher/lower in image). Yes: the bar along x goes deeper in the image, so its two ends are at different rows. Similarly row 478 → 1.0977 and row 500/530 → 1.095/1.097 (same top bar).
+
+So the agentview shows 3 bars. Good. And I mistakenly counted 4.
+
+Now let's move up.
+I [api] [text] The wrist view shows the three handle bars. Seed-0's winning contact pose (eef z≈1.025) pulled the **bottom** handle (z≈0.955); the finger offset is ≈0.07 m in z, so the **middle** handle (z≈1.024) needs eef z≈1.094. Let me shift up.
+I [api] [thinking] The wrist view is similar (camera moved up slightly). The wrist view shows 3 bars. To determine which is the middle handle in world z, I need a reliable wrist→world correspondence. The wrist world map gave odd values earlier (z=0.90 for the top-left bar).
+
+Let me reason about the wrist image orientation: the plate (white with red rings) appears at top-left. The plate is at world (x≈0.04, y≈0.0, z≈0.907). The gripper is at (0.005, -0.10, 1.082) looking toward direction (0.743,-0.531,-0.408). Hmm, the plate at (0.04, 0.0) relative to eef: dx=0.035, dy=+0.10, dz=-0.175. The camera views along (0.743,-0.531,-0.408) — i.e., looking toward +x,-y,down. But the plate is at +y relative to the eef, meaning BEHIND the camera... yet it appears in the top-left of the image. Hmm, wrist camera in LIBERO points along the gripper's approach axis... maybe pitch -1.15 means something else.
+
+Let's reconsider: maybe quat [0.636,0.502,0.042,0.584] → let me convert to rotation matrix. w=0.636, x=0.502, y=0.042, z=0.584. Norm: 0.404+0.252+0.0018+0.341=0.999 ok.
+
+R = [[1-2(y²+z²), 2(xy-wz), 2(xz+wy)],
+     [2(xy+wz), 1-2(x²+z²), 2(yz-wx)],
+     [2(xz-wy), 2(yz+wx), 1-2(x²+y²)]]
+
+y²+z² = 0.001764+0.341056=0.34282 → R00 = 1-0.68564=0.3144
+xy = 0.502*0.042=0.021084; wz=0.636*0.584=0.371424 → 2(xy-wz) = 2(-0.35034) = -0.7007 → R01
+xz = 0.502*0.584=0.293168; wy=0.636*0.042=0.026712 → 2(xz+wy)=2(0.31988)=0.6398 → R02
+xy+wz = 0.021084+0.371424=0.392508 → R10 = 0.7850
+x²+z² = 0.252004+0.341056=0.59306 → R11 = 1-1.18612 = -0.18612
+yz = 0.042*0.584=0.024528; wx=0.636*0.502=0.319272 → 2(yz-wx)=2(-0.294744)=-0.58949 → R12
+xz-wy = 0.293168-0.026712=0.266456 → R20 = 0.5329
+yz+wx = 0.024528+0.319272=0.3438 → R21 = 0.6876
+x²+y² = 0.252004+0.001764 = 0.253768 → R22 = 1-0.507536 = 0.49246
+
+So the gripper frame axes in world:
+x_g = (0.3144, -0.7007, 0.6398)
+y_g = (0.7850, -0.1861, -0.5895)
+z_g = (0.5329, 0.6876, 0.4925)
+
+For Robosuite Panda gripper, the approach direction (from wrist to fingertips) is along -z_g? Typically the gripper's z-axis points outward... In robosuite, the eef site's z-axis is aligned with the gripper's approach direction pointing DOWN when at home (identity quat ≈ [1,0,0,0]). At home, quat ≈ [0.999,0.024,-0.027,0.008] → near identity → R≈I. Then z_g ≈ (0,0,1) = world up. So the approach direction is -z_g (pointing down). Fine.
+
+Now z_g = (0.533, 0.688, 0.493). So -z_g = (-0.533, -0.688, -0.493): the fingers point toward -x, -y, down. Interesting! So my earlier sign was wrong: approach direction is (-0.53, -0.69, -0.49). The gripper points toward -x and -y and downward. Hmm, so the fingers extend toward -x from the eef.
+
+Earlier I computed from rotate_pitch about world X... maybe yaw sign conventions differ. Let's just trust the quaternion.
+
+Fingertips ~0.06 along (-0.533,-0.688,-0.493)*0.06 = (-0.032, -0.041, -0.030). So fingertips ≈ (0.005-0.032, -0.10-0.041, 1.082-0.030) = (-0.027, -0.141, 1.052).
+
+Hmm, tips at x=-0.027, y=-0.141, z=1.052. The middle handle bar: y≈-0.143, z≈1.024, bar spanning x 0.01→0.07. The tips at x=-0.027 are just beyond the bar's left end (bar x starts ~0.01). Close-ish. In seed-0 they reached x=0.0064 → tips at x≈-0.025 with the same result works. Fine.
+
+Now what about the wrist camera's view direction: In robosuite, the wrist camera looks along... The camera is mounted on the gripper, looking down along the gripper's approach axis roughly, but offset. If the gripper approach is (-0.53,-0.69,-0.49), the camera looks in a similar direction. Then the wrist view would show objects in the direction -x,-y from the eef.
+
+Where are the handles relative to eef (0.005,-0.10,1.08)?
+Middle handle center (0.04, -0.143, 1.024): d = (0.035, -0.043, -0.056).
+Top handle (0.04,-0.14,1.096): d = (0.035, -0.040, 0.016).
+Bottom handle (0.04,-0.14,0.955): d = (0.035,-0.040,-0.125).
+
+Camera direction ≈ (-0.53,-0.69,-0.49) normalized: the component along this axis for the middle handle: d·dir = 0.035*(-0.53) + (-0.043)(-0.69) + (-0.056)(-0.49) = -0.0186+0.0297+0.0274 = 0.0384 > 0. So the middle handle is in FRONT of the camera plane (in the viewing direction)? Wait, d·dir>0 means it's in the looking direction. Fine.
+
+Hmm, the wrist images show the plate at top-left. Plate at (0.04, 0.0, 0.907): d=(0.035, 0.10, -0.175). d·dir = -0.0186 -0.069 + 0.0858 = -0.0018 ≈ 0 → the plate is nearly perpendicular (to the side). That's consistent with it appearing at the image edge.
+
+This is getting complicated. Let me take a practical approach: since the wrist camera view shows three bars, and I want to know which is which, I'll use the wrist world map with region mode over a narrow window around each bar to get median world z. Earlier single pixels gave: (520,150)→z 0.90 (hmm), (645,350)→0.992, (800,660)→1.087. Let me instead sample multiple pixels along each bar.
+
+Bar A: points (500,60), (520,150), (560,200) → 
+Bar B: (620,270), (700,380), (740,420)
+Bar C: (760,620), (820,700), (860,780)
+
+Hmm, actually if bar A → z 0.90 = TABLE height, that seems wrong for a handle. Unless... the "bars" I identify are actually not handles but pegs? Let me look at the wrist image again: I see long diagonal cylinders (bars) with short cylindrical pegs sticking perpendicular. Careful: The handle bar of a drawer is a horizontal cylinder parallel to the drawer front; the "pegs" are the two supports connecting it to the panel.
+
+In the wrist image, I see: 
+- Long bar from ~(20,470) to ~(240,610) [in (row,col) terms: starts (row~470,col~20) ends (row~610,col~240)] with a short peg at (row~500,col~280).
+- Long bar from (row~680,col~150) to (row~840,col~450), peg at (row~600,col~455).
+- Long bar from (row~760,col~600) to (row~870,col~790).
+
+Hmm interesting: the third bar appears at the right, and the second bar's peg is at (600,455). 
+
+The z from world map: bar 1 mid (520,150) → 0.90?? x=0.039, y=-0.180, z=0.90. Hmm y=-0.18 is further into the cabinet than the handle y=-0.14. This suggests my pixel was NOT on the handle but on the drawer panel/edge where the depth map gave a weird far value (the panel behind). The dark drawer front is dark → depth may be noisy there? Depth in these sims is from the world map computed via depth buffer... dark surface = real geometry, so it should be accurate. y=-0.18 could be the drawer panel front face if the panel front is at y≈-0.18? Hmm! Maybe the drawer front face is at y≈-0.18 and handles protrude to y≈-0.14, i.e. handle protrudes 4cm. Then the point (520,150) at y=-0.180, z=0.90 would be ON the panel (below the bottom handle, at the cabinet bottom edge/table). 
+
+Hmm z=0.90 = table level. So (row520,col150) sits at the very bottom of the cabinet near the table. Looking at the wrist image: at row ~520, col 150 — that's in the middle of the upper-left bar region... 
+
+I'm distrustful of the wrist world map (may ignore depth occlusion?). Let's test: the wrist world map at a pixel that's clearly on the plate top should give z≈0.907. Plate appears at top-left, e.g. (row 100, col 150) is on the plate white area. Let's check: earlier from the FIRST wrist image... no data. Let me test now.
+
+Honestly, a simpler and more robust plan: skip precise wrist geometry. Use the agentview to confirm what happens after pi0_doubled. The agentview clearly shows which drawer opened (visible displacement of the drawer front). That's the ground truth for which drawer we opened.
+
+So: just call pi0_doubled with the spatial prompt for the middle handle and then check the agentview. If the wrong drawer opened, re-approach at adjusted z and retry (with a closed-loop contact skill... note: if the top drawer opens, the middle handle is still there, so retry is feasible).
+
+Which prompt first? Memory: "verbatim prompt opened the upper drawer" in the bottom-drawer attempt, spatial prompt worked. Given our pose targets the middle and our task is middle, both prompts are aligned. I'll use the verbatim task prompt first? Hmm — the memory's failure was because the pose centered upper/middle. In our pose, which handle dominates? The current wrist view shows three bars, roughly evenly. Slightly centered: the middle bar (row 680-840, col 150-450) crosses the image center diagonally; the third bar is at the right-center.
+
+Hmm. Consider: which bar is in the image center? Image center (512,512). Bar 2 passes through ~(row 760, col 300)? Not exactly center. Bar 3 at (row 790, col 700). Bar 1 at (row 540, col 130).
+
+Honestly the two lower bars near the bottom-center are more prominent... Considering lower-in-image = ? Still unknown.
+
+Let me do one cheap calibration: back_project a wrist pixel ON the plate (white area, top-left, e.g. row 60, col 150) and see what world point it returns. The plate center is (0.04, 0.0, 0.907) roughly (we know table z=0.90, plate top z≈0.907). If the returned z ≈0.90 and y ≈ 0.0 → wrist world map is trustworthy and lower rows = lower z... let's check by also sampling the belt.
+
+Let me sample wrist pixels: (60,150) plate; (300,512) table wood? In the wrist image, the wood table occupies the upper middle; (300,400) → wood table at z 0.90. Then the bars: (540,130), (700,350), (800,700).
+
+If (60,150) gives z 0.90 (plate) and (300,400) gives z 0.90 (table) yet corresponding to different y, then all upper region is table/plate at z=0.90, and the cabinet's handles (0.955-1.097) would be lower in the image. So the handles at rows 540-870 should give z ≥ 0.955. But (520,150) gave 0.90, meaning row 520 col 150 is still table/plate level?? No...
+
+OK let's just do the calibration call batch. It's cheap.
+I [api] [text] Let me calibrate the wrist camera's world map with known landmarks (plate top z≈0.907, table z≈0.90) before choosing the contact prompt.
+I [api] [thinking] Now coherent. Wrist mapping:
+- (540,130) → z=0.9546 → that's the BOTTOM handle (z 0.955). 
+- (700,350) → z=1.0215 → MIDDLE handle (1.024).
+- (810,720) → z=1.1162 → near top? top handle z=1.096... 1.116 is a bit above. Hmm.
+- (830,420) → z=1.0586 — between middle and top; maybe on the drawer panel between handles.
+- (60,150) → plate z=0.9077 ✓.
+- (300,400) → table z=0.8994 ✓ (x=0.178 y=-0.153; that's the wood table, hmm y=-0.153?? whatever).
+
+So lower in the wrist image = higher z. The bars:
+Bar A (upper-left, rows ~470-610 at cols 20-240) → around z 0.90-0.96 = BOTTOM handle region... wait (540,130) = 0.9546 is on bar A → bar A is the BOTTOM handle.
+Bar B (rows ~680-840, cols 150-450) with (700,350)=1.0215 → MIDDLE handle.
+Bar C (rows ~760-870, cols 600-790) with (810,720)=1.1162?? Hmm, that would be above the top handle. Maybe (810,720) is on the top handle whose actual z is 1.096 and the pixel is on the bar's upper surface (bar radius ~0.01-0.015 → top surface at 1.11). Yes! Handle bars are cylinders; sampling the top of the cylinder gives +r. Similarly (700,350) at 1.0215 sampled the bar's mid/upper.
+
+So bar C = TOP handle (z≈1.096-1.11).
+
+Now, in the wrist view: the middle handle (bar B) is in the lower-center-left region and the top handle (bar C) at lower-right. The bottom handle (bar A) at upper-left. Interesting: this wrist view is centered between the bottom and middle handles, i.e., the image is currently centered a bit LOW relative to the middle drawer.
+
+Hmm. The seed-0 insight: "Never start high enough that the wrist view centers on the upper/middle handle pair when using the bottom-drawer prompt" → i.e., their z=1.155 attempt centered on upper/middle handles and opened the upper drawer. So the pose with eef z≈1.08-1.09 may center... In our current view, the middle handle is at image lower-center and the top at lower-right. Which is more central? Image center (512,512). Bar B passes near (512, 200)?? Let me estimate bar B's line: from (680,150) to (840,450). At row 512, extrapolating: not on the bar (bar starts at row 680). Hmm so bar B is entirely below the center. Bar A at rows 470-610 crosses row 512 at col ~90 — quite left.
+
+Hmm, the drawer panel occupies the lower-left portion, and there's the plate/table at the top-left and gray wall at right.
+
+Hmm. So nothing is at the image center — the view is mostly showing the tabletop/wall. That's not ideal for Pi0 grounding. Maybe I should tilt/position so a handle is centered. 
+
+In seed 0, the winning pose was eef [0.0064,-0.1300,1.0246] with the same pitch/yaw and their wrist presumably showed the bottom handle centered.
+
+Our current: eef (0.005, -0.0999, 1.0816). Their y was -0.1300 (3cm closer to the cabinet). That difference matters for the wrist view centering! With y=-0.13, the cabinet face fills more of the view; the handles would appear... Let's just move to y=-0.128 and z≈1.094 and check the wrist again. That reproduces their geometry shifted up by 0.069 in z.
+
+Actually since the mapping lower-row = lower-z is not affine-uniform... let's just do it and look.
+
+Do move_pose to [0.005, -0.128, 1.094] (small step).
+
+Then inspect the wrist: I want the MIDDLE handle to appear... hmm, what does "centered" mean for grounding? In seed-0, at eef z=1.0246, y=-0.13, the bottom handle (z 0.955) was presumably centered. So "centered" corresponds to handle z = eef_z - 0.07. So for the middle handle (1.024): eef z = 1.094. Consistent with plan. Good, so at y=-0.128, z=1.094, the middle handle should be centered in the wrist view. Let's do that and verify visually that the middle handle is centered.
+I [api] [text] Wrist calibration decoded: bar A (upper-left)=bottom handle z≈0.955, bar B (lower-center)=**middle** z≈1.022, bar C (lower-right)=top z≈1.11. Seed-0's centering rule was handle_z ≈ eef_z − 0.07 at y≈−0.13; matching that for the middle handle means eef ≈ [0.005, −0.128, 1.094].
+I [api] [thinking] Now the wrist view shows 3 handles: bar A upper-left (bottom handle), bar B lower-center-left (middle), bar C lower-right (top). Hmm same layout as before, slightly shifted.
+
+Which one dominates the view center? The image center is (512,512). Bar B spans roughly (row 460,col 90) to (row 690,col 420)?? Actually looking at the latest wrist image in world-z terms: bar A (upper-left, at rows ~350-620, cols 0-270): let me map. Hmm.
+
+Rather than guess, let me determine each bar's world position in this frame by sampling pixels.
+
+Better plan: use region mode? Let's just check whether my needed handle appears roughly centered. The middle handle should be at eef_z - 0.07 = 1.024. In the previous frame, (700,350) gave z=1.0215 = middle handle, and image center is (512,512)... (700,350) is below-left of center.
+
+In seed-0, the same geometry had the bottom handle (the target) presumably at (700,350)-equivalent position too — not image center either. So "centered" isn't literally image center; maybe the relevant thing is which handle is most visible/prominent.
+
+Hmm. Let me reconsider whether the seed-0 z-offset inference is right at all. Unverified assumption. The alternative view: their eef z=1.0246 was intended to be "low, at the bottom drawer" and their prompt said "lowest gray drawer handle" — so the SPATIAL PROMPT did the grounding, not necessarily the pose. The pose's job was just to be low enough that the wrist view included the bottom handle as a visible option (and to avoid the view being dominated by upper handles).
+
+Given this, the analogous approach for the middle drawer: pose at middle-ish height with all three handles visible, and prompt "pull the middle gray drawer handle outward". Our current pose (eef z=1.094) shows all three handles. 
+
+But wait — our current eef z=1.094 is at the TOP handle's z level. Hmm. Risk: Pi0 grounds to "the gray drawer handle it sees most prominently". Since the prompt says "middle", and it sees all 3, this should be OK.
+
+Alternatively, use the verbatim task prompt "open the middle drawer of the cabinet" — since this is exactly LIBERO's training language for this task, Pi0 likely learned which drawer to pull given the view. But the memory shows verbatim opened the top drawer when the view was centered high. Ours is centered... hmm.
+
+I think the spatial prompt "pull the middle gray drawer handle outward" is more explicit and worked for the bottom case. Let's use that first with max_chunks ~25, and watch the agentview.
+
+Actually, let me reconsider the pose once more. Ideally Pi0's wrist view should have the middle handle clearly in the foreground. A pose slightly LOWER than the middle handle's fingertip line... Hmm.
+
+Let me think about what the view would look like if the eef were exactly at the middle handle's height (eef z ≈ 1.094 with tips at 1.024) — that's what we have. The fingertips are essentially at the middle handle. The wrist camera is mounted slightly behind/above the fingers. So the middle handle should be near the bottom of the view (close), which is what we see (bar B at rows 460-690 in the lower-left...). And the top handle (bar C) is further away (rows 620-870 in the lower-right). OK.
+
+I'll now just run pi0_doubled. Choose prompt: "pull the middle gray drawer handle outward", max_chunks 30.
+
+Note: pi0_doubled max_chunks default 20. Each chunk may move a lot. Let's use 30.
+
+Concern: Pi0 might grab the handle and pull — that's fine.
+
+One more consideration: our eef is at y=-0.1167, 2cm in front of the seed-0 winning y=-0.13. Fine; the policy will reach.
+
+Let's go.
+I [api] [text] All three handles are in the wrist view with the fingers at the middle-handle height. Now I'll invoke Pi0's learned contact pull with an explicitly middle-qualified prompt.
+I [api] [thinking] terminated: true. The agentview shows the middle drawer pulled open (the drawer front protruding out toward the robot, revealing an open drawer compartment). Task complete.
+
+Now write the audit + recipe, then finish.
+I [api] [text] `terminated: true` — the middle drawer is visibly pulled out in the agentview (the drawer front now protrudes toward the robot with an open cavity). Writing audit and recipe.
+I [agent] recipe: goal_t0_s0_recipe.jsonl
+I [agent] elapsed: 164.6s
+I [agent] usage: in=633646 out=23952 tool_calls=44
+I [agent] transcript: workspace/vla_baselines/artifacts/deepseek-batch-40usd-2026-11-01/episodes/libero_goal_t0_s0/online-task/transcript_goal_t0_s0.json

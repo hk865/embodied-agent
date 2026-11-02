@@ -1,0 +1,9 @@
+# 公开快照的离线复核
+
+在项目根目录执行analyze_statistics.py和analyze_budget.py，读取仓库中的去敏文本记录；不需要模型、CUDA、仿真或网络。README给出了准确命令。运行scripts/release/check_publication.py核查117回合的完整消息、JSON、链接、凭据模式和文件allowlist。requirements-report.txt是PDF离线检查所需的独立依赖。
+
+图像提取、会话预览图再生成和从头重建PDF需要本地原始截图，这些大型附件未上传；请直接使用docs/reports/libero-pilot-report.pdf。不要用缺失截图伪造或重建视觉证据。已保存的完整session文本可直接查看，system prompt和未保存的时间或HTTP reasoning_content不能重建。
+
+公开副本的本机路径已改成项目相对路径或占位符，历史源码指纹描述原实验，不是对公开版做resume授权。该batch已budget_stopped，不能恢复，也不能把旧失败替换成后续补跑结果。
+
+77项离线contract测试需要先取得锁定第三方源码receipt及初态元数据；验证时通过临时忽略的外部依赖链接复用本机既有文件，验证完已移除，不包含这些第三方源码、数据或权重。测试只用假Key和MockTransport，没有付费API调用。

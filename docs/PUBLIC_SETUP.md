@@ -1,0 +1,16 @@
+# 环境与资源准备
+
+先阅读根README中的协议与历史终态说明。源码发布不包含模型、LIBERO资产或任何真实API Key。
+
+1. 用scripts/vla/bootstrap_sources.py查看来源计划，再显式选择所需源码的archive或git方式。所有来源commit见workspace/vla_baselines/configs/harness.sources.lock.json。
+2. 按configs下harness-vla、harness-simulator、harness-sam3 requirements分别创建隔离Python环境；API planner使用configs/harness-api-requirements.txt中的固定版本，不把三个CUDA栈合并安装。
+3. 从官方Hugging Face RLinf/RLinf-Pi05-LIBERO-130-fullshot-SFT获取revision 6222623f635769bfc73c9472e29fab9b7fd8e027到checkpoints对应目录；从facebook/sam3官方发布源获取SAM3并遵守其许可证。锁文件与weight-manifest仅是校验元数据，不是模型权重。不要上传optimizer或模型bin/safetensors。
+4. 从官方LIBERO取得仿真assets和初态，必须选择standard变体；Pro是另一个benchmark。不要把数据集或pruned_init推送到本仓库。
+5. 自行配置进程环境中的DEEPSEEK_API_KEY；不要写入版本控制。本项目适配器仅接受https://api.deepseek.com。当前历史模型别名为deepseek-flash，不构成永远不变的底层权重版本承诺。
+6. 本次batch已budget_stopped，不能resume。新评测需单独建实验身份、固定协议、保存独立累计账本并另行授权预算。本发布操作没有执行仿真、模型或训练。
+
+完整离线统计无需CUDA或网络，在项目根目录运行README的analyze_statistics.py和analyze_budget.py。PDF检查需要pypdf/pdfplumber，渲染需要Poppler；重新提取图像需要未上传的本机截图，不要把缺失图像当作全部已公开。
+
+离线pytest设置PYTEST_DISABLE_PLUGIN_AUTOLOAD=1，避免ROS等无关插件自动加载；使用MockTransport和假Key，不执行付费API。完整77项检查需要先准备锁定源码receipt与已下载初态元数据；它们是外部依赖，不随此仓库分发。
+
+发布代码只增加一处历史记录的可移植性处理：pilot校验把项目相对memory-dir按项目根目录规范化后，仍与固定memory revision路径严格比较；不改变策略、预算或模型。原运行源码没有被修改。

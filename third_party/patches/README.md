@@ -1,0 +1,5 @@
+# 固定来源核对与兼容处理
+
+已重新下载锁定commit的RPent、RLinf与OpenPI官方archive，并核实SHA256与原lock一致；对archive和本地快照均存在的文本文件逐字节比对，未发现差异，因此没有vendor patch需要分发。此核对不声称审计了全部二进制或额外本地文件。结果见audit.json。
+
+本项目的DeepSeek provider与预算hook在scripts/harness/deepseek_api.py，Pi0/Transformers兼容处理在scripts/vla/patch_pi05_transformers.py，服务包装器在scripts/vla/run_harness_vla.py。发布保留这些自有源码，而不复制第三方仓库。请以来源commit和对应上游许可证复现。

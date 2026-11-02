@@ -1,0 +1,125 @@
+{
+  "started_at_utc": "2026-11-01T17:47:28.558984+00:00",
+  "status": "passed",
+  "stage": "online_task_complete",
+  "task": {
+    "libero_type": "standard",
+    "suite": "libero_10",
+    "task": 2,
+    "seed": 0,
+    "max_episode_steps": 10000
+  },
+  "endpoints": {
+    "env": "http://127.0.0.1:42303",
+    "vla": "http://127.0.0.1:38337",
+    "sam3": "http://127.0.0.1:34895"
+  },
+  "torch_compile": true,
+  "reasoning_effort": "high",
+  "planner": "api",
+  "model": "deepseek:deepseek-flash",
+  "base_url": "https://api.deepseek.com",
+  "api_cost_limit_usd": 40.0,
+  "max_tokens": 32000,
+  "configuration_version": "v3-output-32000",
+  "commands": {
+    "env": [
+      "workspace/vla_baselines/.venvs/harness-rpent/bin/python",
+      "-m",
+      "robots.libero.env_server",
+      "--suite",
+      "libero_10",
+      "--task",
+      "2",
+      "--seed",
+      "0",
+      "--max-episode-steps",
+      "10000",
+      "--transport",
+      "http",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "42303",
+      "--parent-watch"
+    ],
+    "online_planner": [
+      "workspace/vla_baselines/.venvs/harness-rpent/bin/python",
+      "scripts/harness/deepseek_api.py",
+      "--robot",
+      "libero",
+      "--libero-type",
+      "standard",
+      "--suite",
+      "libero_10",
+      "--task",
+      "2",
+      "--seed",
+      "0",
+      "--max-episode-steps",
+      "10000",
+      "--cuda-device",
+      "0",
+      "--planner",
+      "api",
+      "--reasoning-effort",
+      "high",
+      "--max-turns",
+      "100",
+      "--max-tokens",
+      "32000",
+      "--planner-timeout-s",
+      "1200",
+      "--memory-profile",
+      "local",
+      "--memory-dir",
+      "workspace/vla_baselines/cache/harness-assets-download/memory/7db66088d06d04ae097682332a09704f13e6fc0c/GPT_5.5_xhigh",
+      "--output-dir",
+      "workspace/vla_baselines/artifacts/deepseek-batch-40usd-2026-11-01/episodes/libero_10_t2_s0/online-task",
+      "--model",
+      "deepseek:deepseek-flash",
+      "--base-url",
+      "https://api.deepseek.com",
+      "--env-endpoint",
+      "http://127.0.0.1:42303",
+      "--vla-endpoint",
+      "http://127.0.0.1:38337",
+      "--sam3-endpoint",
+      "http://127.0.0.1:34895"
+    ]
+  },
+  "component_checks": {
+    "status": "previous_validation_reused"
+  },
+  "planner_exit_code": 0,
+  "transcript": "workspace/vla_baselines/artifacts/deepseek-batch-40usd-2026-11-01/episodes/libero_10_t2_s0/online-task/transcript_10_t2_s0.json",
+  "upstream_environment_success": null,
+  "environment_success": true,
+  "native_success_evidence": {
+    "path": "workspace/vla_baselines/artifacts/deepseek-batch-40usd-2026-11-01/episodes/libero_10_t2_s0/online-task/states.json",
+    "terminated_step_indices": [
+      24
+    ],
+    "state_record_count": 25
+  },
+  "planner_finish": {
+    "_finish": true,
+    "status": "success",
+    "summary": "SOLVED in one episode (terminated=true at step 24) on libero_10 task 2, seed 0: \"turn on the stove and put the moka pot on it\".\n\nPhase 1 \u2014 stove on: used pi0_pick as a closed-loop CONTACT skill (prompt \"turn the stove knob\", lift_thresh 999, gripper_closed_thresh 0). In 5 chunks it reached the knob at (-0.183, 0.215, 0.938), closed on the lever and rotated it; the hot-plate coil rings turned bright red (stove ON) \u2014 confirmed in RGB.\n\nPhase 2 \u2014 the hard part, grasping the pot. The pot's handle is a closed loop whose bar sat at z 0.975-1.03 on a 13cm-tall upright pot. Every handle hook (pi0_pick, and scripted move_pose with pitch 0.45/0.9 at yaw 0 and 90) stalled at eef z~1.04-1.055. I calibrated the fingertips from the wrist world map and found the pads sit essentially AT the eef height (eef_z+0.006), so the bar was physically unreachable from above. A diagnostic descent at x=-0.015 and at (0.033, +0.10) then proved the \"wall\" was NOT an IK limit (the eef reached z=0.950 at x=0.033 once clear of the pot) \u2014 the pot itself was the obstruction. The pot got knocked onto its side during those attempts, which was lucky: a lying cylinder is an easier target.\n\nPhase 3 \u2014 re-localized the tipped pot from scratch (agentview/wrist region + point back_project): axis from base (0.029, 0.074, 0.976) to cap end (-0.044, -0.037, 0.942), diameter 4.2cm at the cap growing to 7.6cm at the base. Derived the correct cross-diameter gripper yaw = 0.99 rad (a first try at 2.154 was 33\u00b0 off and put a fingertip on the pot's top), descended onto the narrow upper chamber, and closed: the opening settled at a 6.7cm finger gap = exactly the pot's local diameter, with the wrist image showing the pot's white body pressed between both pads. Lifted it clean off the table.\n\nPhase 4 \u2014 carried with gripper:+1 on measured held-offsets (pot base 9.2cm from the grip along (0.52, 0.855)) in two sub-0.20m waypoints so the pot's centre landed at (-0.068, 0.191), i.e. 1.8cm from the coil centre (-0.062, 0.208), then lowered it; the goal predicate fired on touchdown at eef z=0.9965, before a release was even required.\n\nAudit and 24-step recipe JSONL written to the episode directory. No reset was used."
+  },
+  "planner_error": null,
+  "planner_stats": {
+    "total_input_tokens": 4004719,
+    "total_output_tokens": 104656,
+    "total_cached_input_tokens": 2552832,
+    "turns_used": 48,
+    "tool_calls": 96
+  },
+  "elapsed_s": 708.5,
+  "cleanup_exit_codes": {
+    "planner": 0,
+    "env": 0
+  },
+  "cleanup_errors": [],
+  "finished_at_utc": "2026-11-01T17:59:30.754066+00:00"
+}
